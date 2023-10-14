@@ -10,7 +10,7 @@ class StateEncoder(nn.Module):
     Check the notebook for more details about the architecture.
     """
 
-    def __init__(self, latent_dim, num_channels=3):
+    def __init__(self, latent_dim, adapt_dim, num_channels=3):
         super().__init__()
         self.latent_dim = latent_dim
         self.num_channels = num_channels
@@ -22,12 +22,10 @@ class StateEncoder(nn.Module):
             nn.ReLU(),
             nn.MaxPool2d(2, stride=2),
             nn.Flatten(),
-            nn.Linear(100, 100),
-            nn.ReLU(),
-            nn.Linear(100, latent_dim)
             )
+        self.adjust = nn.Sequential(nn.Linear(100 + adapt_dim, 100), nn.ReLU(), nn.Linear(100, latent_dim))
         
-    def forward(self, state):
+    def forward(self, state, adjustment):
         """
         :param state: <torch.Tensor> of shape (..., num_channels, 32, 32)
         :return latent_state: <torch.Tensor> of shape (..., latent_dim)
@@ -35,7 +33,7 @@ class StateEncoder(nn.Module):
         latent_state = None
         input_shape = state.shape
         state = state.reshape(-1, self.num_channels, 32, 32)
-        latent_state = self.encoder(state)
+        latent_state = self.adjust(torch.cat(self.encoder(state), adjustment))
 
         # convert to original multi-batch shape
         latent_state = latent_state.reshape(*input_shape[:-3], self.latent_dim)
@@ -50,7 +48,7 @@ class StateVariationalEncoder(nn.Module):
     Check the notebook for more details about the architecture.
     """
 
-    def __init__(self, latent_dim, num_channels=3):
+    def __init__(self, latent_dim, adapt_dim, num_channels=3):
         super().__init__()
         self.latent_dim = latent_dim
         self.num_channels = num_channels
@@ -62,13 +60,12 @@ class StateVariationalEncoder(nn.Module):
             nn.ReLU(),
             nn.MaxPool2d(2, stride=2),
             nn.Flatten(),
-            nn.Linear(100, 100),
-            nn.ReLU()
             )
+        self.adjust = nn.Sequential(nn.Linear(100 + adapt_dim, 100), nn.ReLU())
         self.mean = nn.Linear(100, self.latent_dim)
         self.std = nn.Linear(100, self.latent_dim)
 
-    def forward(self, state):
+    def forward(self, state, adjustment):
         """
         :param state: <torch.Tensor> of shape (..., num_channels, 32, 32)
         :return: 2 <torch.Tensor>
@@ -79,7 +76,7 @@ class StateVariationalEncoder(nn.Module):
         log_var = None
         input_shape = state.shape
         state = state.reshape(-1, self.num_channels, 32, 32)
-        encode = self.encoder(state)
+        encode = self.adjust(torch.cat(self.encoder(state), adjustment))
         mu = self.mean(encode)
         log_var = self.std(encode)
 
@@ -144,14 +141,14 @@ class StateVAE(nn.Module):
     State AutoEncoder
     """
 
-    def __init__(self, latent_dim, num_channels=3):
+    def __init__(self, latent_dim, adjust_dim, num_channels=3):
         super().__init__()
         self.latent_dim = latent_dim
         self.num_channels = num_channels
-        self.encoder = StateVariationalEncoder(latent_dim, num_channels)
+        self.encoder = StateVariationalEncoder(latent_dim, adjust_dim, num_channels)
         self.decoder = StateDecoder(latent_dim, num_channels)
 
-    def forward(self, state):
+    def forward(self, state, adjustment):
         """
         :param state: <torch.Tensor> of shape (..., num_channels, 32, 32)
         :return:
@@ -163,18 +160,18 @@ class StateVAE(nn.Module):
         reconstructed_state = None # decoded states from the latent_state
         mu, log_var = None, None # mean and log variance obtained from encoding state
         latent_state = None # sample from the latent space feeded to the decoder
-        mu, log_var = self.encoder(state)
+        mu, log_var = self.encoder(state, adjustment)
         latent_state = self.reparameterize(mu, log_var)
         reconstructed_state = self.decoder(latent_state)
         return reconstructed_state, mu, log_var, latent_state
 
-    def encode(self, state):
+    def encode(self, state, adjustment):
         """
         :param state: <torch.Tensor> of shape (..., num_channels, 32, 32)
         :return: <torch.Tensor> of shape (..., latent_dim)
         """
         latent_state = None
-        mu, log_var = self.encoder(state)
+        mu, log_var = self.encoder(state, adjustment)
         latent_state = self.reparameterize(mu, log_var)
         return latent_state
 
