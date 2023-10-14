@@ -16,14 +16,14 @@ class LatentDynamicsModel(nn.Module):
     The input to the latent_dynamics_model must be the latent states and actions concatentated along the last dimension.
     """
 
-    def __init__(self, latent_dim, action_dim, num_channels=3):
+    def __init__(self, latent_dim, action_dim, adjustment_dim, num_channels=3):
         super().__init__()
         self.latent_dim = latent_dim
         self.action_dim = action_dim
         self.num_channels = num_channels
 
         self.latent_dynamics_model =  nn.Sequential(
-          nn.Linear(self.latent_dim + self.action_dim, 100),
+          nn.Linear(self.latent_dim + self.action_dim + adjustment_dim, 100),
           nn.ReLU(),
           nn.Linear(100, 100),
           nn.ReLU(),
@@ -36,7 +36,7 @@ class LatentDynamicsModel(nn.Module):
 
         # ---
 
-    def forward(self, state, action):
+    def forward(self, state, action, adjustment):
         """
         Compute next_state resultant of applying the provided action to provided state
         :param state: torch tensor of shape (..., num_channels, 32, 32)
@@ -44,7 +44,7 @@ class LatentDynamicsModel(nn.Module):
         :return: next_state: torch tensor of shape (..., num_channels, 32, 32)
         """
         state = self.encoder(state)
-        inpt = torch.cat((state, action), dim=-1)
+        inpt = torch.cat((state, action, adjustment), dim=-1)
         next_state = self.latent_dynamics_model(inpt) + state
         next_state = self.decoder(next_state)
 
@@ -68,7 +68,7 @@ class LatentDynamicsModel(nn.Module):
         state = self.decoder(latent_state)
         return state
 
-    def latent_dynamics(self, latent_state, action):
+    def latent_dynamics(self, latent_state, action, adjustment):
         """
         Compute the dynamics in latent space
         z_{t+1} = z_{t} + latent_dynamics_model(z_{t}, a_{t})
@@ -76,6 +76,6 @@ class LatentDynamicsModel(nn.Module):
         :param action: torch tensor of shape (..., action_dim)
         :return: next_latent_state: torch tensor of shape (..., latent_dim)
         """
-        inpt = torch.cat((latent_state, action), dim=-1)
+        inpt = torch.cat((latent_state, action, adjustment), dim=-1)
         next_latent_state = self.latent_dynamics_model(inpt) + latent_state
         return next_latent_state
